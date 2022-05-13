@@ -8,13 +8,13 @@ Original file is located at
 """
 
 import pyspark
-import sys
+import os
 import csv
 import argparse
 import numpy as np
 import math
 from scipy.stats import t
-import pprint
+import math
 
 def create_county_tuples(tup):
   crime_data_header_dict = crime_dict.value
@@ -55,6 +55,12 @@ def get_p_values(tup):
   t_stat = pearson_corr/math.sqrt((1 - (pearson_corr**2))/df)
   p_value = 2 * (1 - t.cdf(abs(t_stat), df))
   corrected_p_value = p_value * correction_val
+  if math.isnan(pearson_corr):
+    pearson_corr = 0
+  if math.isnan(p_value):
+    p_value = 0
+  if math.isnan(corrected_p_value):
+    corrected_p_value = 0
   return (offence_type, (pearson_corr, p_value, corrected_p_value))
 
 def parse_args():
@@ -76,34 +82,39 @@ if __name__ == "__main__":
 
   sc = pyspark.SparkContext()
 
-  crime_data = sc.textFile(crime_data_path)
-  feature_data = sc.textFile(feature_data_path)
-  crime_data = crime_data.mapPartitions(lambda line: csv.reader(line))
-  feature_data = feature_data.mapPartitions(lambda line: csv.reader(line))
+  for i, data_path in enumerate(os.listdir(crime_data_path)):
+    full_path = os.path.join(crime_data_path, data_path)
+    print("Processing:", full_path)
+    crime_data = sc.textFile(full_path)
+    feature_data = sc.textFile(feature_data_path)
+    crime_data = crime_data.mapPartitions(lambda line: csv.reader(line))
+    feature_data = feature_data.mapPartitions(lambda line: csv.reader(line))
 
-  crime_data_header = crime_data.first()
-  feature_data_header = feature_data.first()
+    crime_data_header = crime_data.first()
+    feature_data_header = feature_data.first()
 
-  crime_data_header_dict = {k.strip(): v for v, k in enumerate(crime_data_header)}
-  feature_data_header_dict = {k.strip(): v for v, k in enumerate(feature_data_header)}
-  crime_data_header_dict.pop('', None)
+    crime_data_header_dict = {k.strip(): v for v, k in enumerate(crime_data_header)}
+    feature_data_header_dict = {k.strip(): v for v, k in enumerate(feature_data_header)}
+    crime_data_header_dict.pop('', None)
 
-  crime_dict = sc.broadcast(crime_data_header_dict)
-  feature_dict = sc.broadcast(feature_data_header_dict)
-  years_list = sc.broadcast(years_list)
-  feature_name = sc.broadcast(feature_name)
+    crime_dict = sc.broadcast(crime_data_header_dict)
+    feature_dict = sc.broadcast(feature_data_header_dict)
+    if i == 0:
+      years_list = sc.broadcast(years_list)
+      feature_name = sc.broadcast(feature_name)
 
-  crime_temp = crime_data.filter(lambda row: row != crime_data_header).flatMap(lambda t: create_county_tuples(t))
-  feature_temp = feature_data.filter(lambda row: row != feature_data_header).flatMap(lambda t: create_feature_tuples(t))
+    crime_temp = crime_data.filter(lambda row: row != crime_data_header).flatMap(lambda t: create_county_tuples(t))
+    feature_temp = feature_data.filter(lambda row: row != feature_data_header).flatMap(lambda t: create_feature_tuples(t))
 
-  joined_data = feature_temp.join(crime_temp)
-  grouped_joined_data = joined_data.groupByKey().mapValues(list)
-  flattened_grouped_joined_data = grouped_joined_data.flatMap(lambda tup: tup[1])
-  flattened_grouped_joined_data = flattened_grouped_joined_data.map(lambda tup: (tup[1][0], (tup[1][1], tup[0])))
-  grouped_by_offence_type = flattened_grouped_joined_data.groupByKey().mapValues(list)
-  corr_list = grouped_by_offence_type.map(lambda tup: get_correlation_val(tup)).map(lambda tup: get_p_values(tup)).collect()
-  corr_list = sorted(corr_list, key=lambda tup: tup[1][0], reverse=True)
-  file_name = feature_name.value + "_corr_" + years_list.value[0] + "-" + years_list.value[-1] + ".txt"
-  output_file = open(file_name, 'w')
-  pp = pprint.PrettyPrinter(indent=2, compact=True, stream=output_file)
-  pp.pprint(corr_list)
+    joined_data = feature_temp.join(crime_temp)
+    grouped_joined_data = joined_data.groupByKey().mapValues(list)
+    flattened_grouped_joined_data = grouped_joined_data.flatMap(lambda tup: tup[1])
+    flattened_grouped_joined_data = flattened_grouped_joined_data.map(lambda tup: (tup[1][0], (tup[1][1], tup[0])))
+    grouped_by_offence_type = flattened_grouped_joined_data.groupByKey().mapValues(list)
+    corr_list = grouped_by_offence_type.map(lambda tup: get_correlation_val(tup)).map(lambda tup: get_p_values(tup)).collect()
+    corr_list = sorted(corr_list, key=lambda tup: tup[1][0], reverse=True)
+    file_name = data_path.split("_")[0] + "_" + feature_name.value + "_corr_" + years_list.value[0] + "-" + years_list.value[-1] + ".txt"
+    with open(file_name, "w") as file1:
+      for corr in corr_list:
+        file1.write(str(corr))
+        file1.write("\n")
