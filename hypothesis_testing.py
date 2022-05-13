@@ -20,6 +20,10 @@ def create_county_tuples(tup):
   crime_data_header_dict = crime_dict.value
   fips_code = tup[crime_data_header_dict['FIPS_Code']]
   year = tup[crime_data_header_dict['Year']]
+  if int(year) in range(10, 21):
+    year = '20' + year
+  elif int(year) in range(1, 10):
+    year = '200' + year
   for key, value in crime_data_header_dict.items():
     if key not in ['FIPS_Code', 'Year']:
       yield ((int(fips_code), int(year)), (key, float(tup[value])))
@@ -32,7 +36,7 @@ def create_feature_tuples(tup):
     col_name = feature_name.value + "_" + year
     rate = tup[feature_data_header_dict[col_name]].strip()
     if len(rate) > 0:
-      yield ((int(fips_code), int(year[-1])), float(rate))
+      yield ((int(fips_code), int(year)), float(rate))
 
 def get_correlation_val(data):
   offence_code = data[0]
@@ -82,6 +86,7 @@ if __name__ == "__main__":
 
   crime_data_header_dict = {k.strip(): v for v, k in enumerate(crime_data_header)}
   feature_data_header_dict = {k.strip(): v for v, k in enumerate(feature_data_header)}
+  crime_data_header_dict.pop('', None)
 
   crime_dict = sc.broadcast(crime_data_header_dict)
   feature_dict = sc.broadcast(feature_data_header_dict)
