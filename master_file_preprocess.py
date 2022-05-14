@@ -10,7 +10,7 @@
 ## Concepts Used: [1] Similarity Search [2] Hypothesis Testing
 ##
 ## Pipelines:
-## [1] Spark : crime_similarity.py line 55, hypothesis_testing.py line 120
+## [1] Spark : crime_similarity.py line 75, hypothesis_testing.py line 120
 ## [2] Hadoop : Below are the locations and sizes of the datasets used 
 ##              Raw Dataset Size:
 ##              cluster-d7bf-m:~$ hadoop fs -du -s dataset/Raw_files_FBI_dataset | awk '/^[0-9]+/ { print $1/(1024**3) " [GB]\t" $2 }'
