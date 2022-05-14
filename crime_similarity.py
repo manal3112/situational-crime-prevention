@@ -1,10 +1,40 @@
-##########################################################################
+###############################################################################################################################
+## Team members: Manal Shah(114362205), Dhruv Verma(113140590), Gauri Baraskar(114395197), Shreyashee Sinha(114709266)
 ##
-## Perform similarity search based on crime type, demographics and crime rate 
+## Code Description: Perform similarity search using Minhashing and LSH based on crime type, demographics and crime rate 
 ## at county level using FBI UCR dataset 1980-2020
 ##
-## Author: Manal Shah
-## SBU ID: 114362205
+## Script Name and Line numbers where 2 data frameworks and 2 concepts are used: 
+## Big Data Pipeline Used: [1] Spark [2] Hadoop
+## Concepts Used: [1] Similarity Search [2] Hypothesis Testing
+##
+## Pipelines:
+## [1] Spark : crime_similarity.py line 55, hypothesis_testing.py line 83
+## [2] Hadoop : Below are the locations and sizes of the datasets used 
+##              Raw Dataset Size:
+##              cluster-d7bf-m:~$ hadoop fs -du -s dataset/Raw_files_FBI_dataset | awk '/^[0-9]+/ { print $1/(1024**3) " [GB]\t" $2 }'
+##              23.5555 [GB]    50585071790
+
+##              Processed Dataset Size
+##              cluster-d7bf-m:~$ hadoop fs -du -s dataset/Arrest_Data | awk '/^[0-9]+/ { print $1/(1024**3) " [GB]\t" $2 }'
+##              6.96124 [GB]    14949158438
+##              cluster-d7bf-m:~$ hadoop fs -du -s dataset/Arrest_Data_New | awk '/^[0-9]+/ { print $1/(1024**3) " [GB]\t" $2 }'
+##              3.91192 [GB]    8400775590
+
+##              Unemployment/Poverty/DUI Dataset Size 
+##              cluster-d7bf-m:~$ hadoop fs -du -s dataset/Other_data | awk '/^[0-9]+/ { print $1/(1024**3) " [GB]\t" $2 }'
+##              0.294721 [GB]   632909186
+##
+## Concepts
+## [1] Similarity Search : crime_similarity.py
+## [2] Hypothesis Testing: hypothesis_testing.py
+##
+## System Details: 
+## Master Node:
+## n1-standard-2, dataproc-2-0-ubu18-20220417-180200-rc01 , 64 GB Boot Disk Size 
+## Worker Nodes:
+## n1-highmem-4, dataproc-2-0-ubu18-20220417-180200-rc01, 48 GB Boot Disk Size
+
 
 from data_preprocess import get_aggregate_data
 from pyspark import SparkContext
@@ -20,7 +50,7 @@ import math
 if __name__ == "__main__":
 
     # Logging Setup
-    logging.basicConfig(filename="crime_similarity_OUTPUT_new.txt", 
+    logging.basicConfig(filename="crime_similarity_OUTPUT.txt", 
 					format='%(asctime)s %(message)s', 
 					filemode='w')
     logger=logging.getLogger()
@@ -41,18 +71,19 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
+    # Spark Context
     sc = SparkContext.getOrCreate()
 
     # Fix seed 
     random.seed(42) # 8,12,42
 
     # Agency ID
-    # LA, Chicago, Houston, Harris, Phoenix, Las vegas, Philadelphia, San Antonio, San diego, Suffolk
-    ids_to_check = ['CA01942', 'ILCPD00', 'TXHPD00','TX10100', 'AZ00723', 'NV00201', 'PAPEP00', 'TXSPD00', 'CA03711', 'NY05101']
+    # LA, Chicago, Houston, Harris, Phoenix, Las vegas, Philadelphia, San Antonio, San diego, NY
+    ids_to_check = ['CA01942', 'ILCPD00', 'TXHPD00','TX10100', 'AZ00723', 'NV00201', 'PAPEP00', 'TXSPD00', 'CA03711', 'NY03030']
 
-    # =======================================
-    #                 TASK II.A
-    # =======================================
+    # =====================================================================================================================
+    #  Create RDD from csv file and transform RDD into useful format for finding similar matches in MinHashing 
+    # =====================================================================================================================
     agency_rdd = sc.textFile(filename, 32)
     agency_rdd = agency_rdd.mapPartitions(lambda x: csv.reader(x))
 
@@ -69,13 +100,11 @@ if __name__ == "__main__":
 
     agency_rdd = agency_rdd.mapPartitions(reFormat)
 
-    # # CHECKPOINT II.A
-    # logger.info("----------------------------------------------CHECKPOINT II.A----------------------------------------------")
     # for id in ids_to_check:
     #     logger.info("Agency ORI Code:{}:\nFeatures:\n{}".format(id, pformat(agency_rdd.lookup(id)))) 
 
     # =======================================
-    #                 TASK II.B
+    # Create Shingles and Minhashing
     # =======================================
     shingles = agency_rdd.values() \
                         .map(lambda x: (1,x)) \
@@ -122,17 +151,15 @@ if __name__ == "__main__":
                                     .flatMap(lambda x: [((x[0],x[1][0]), x[1][1])]) \
                                     .reduceByKey(lambda x, y : min(x,y)) # MinHash happens here
 
-    # CHECKPOINT II.B
-    # logger.info("----------------------------------------------CHECKPOINT II.B----------------------------------------------")
     #(Set_i, (i, hashcode)) - Convinient for lookup/filtering
     # lookup_rdd = signature_rdd.map(lambda x: (x[0][0], (x[0][1], x[1]))) \
     #                           .filter(lambda x: x[0] in ids_to_check)
     # for id in ids_to_check:
     #     logger.info("Agency ORI Code:{}:\nSignature:\n{}".format(id, pformat(sorted(lookup_rdd.lookup(id)))))
 
-    # =======================================
-    #                 TASK II.C
-    # ======================================= 
+    # ==============================================================================
+    #  Locality Sensitive Hashing (LSH) implementation
+    # ==============================================================================
     signature_rows = 100 # Total rows in signature matrix
     b = 33 # Bands
     r = 3  # Rows
@@ -161,9 +188,6 @@ if __name__ == "__main__":
                             .values() # Create candidate pairs 
         pairs.extend([p for pairPerHash in all_pairs.collect() for p in pairPerHash])
     final_pairs = sc.parallelize(set(pairs))
-
-    # CHECKPOINT II.C
-    # logger.info("----------------------------------------------CHECKPOINT II.C----------------------------------------------")
 
     def calcJaccardSim(set1, set2):
         '''
