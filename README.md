@@ -10,7 +10,7 @@ Big Data Pipeline Used: [1] Spark [2] Hadoop
 Concepts Used: [1] Similarity Search [2] Hypothesis Testing
 
 Pipelines:
-[1] Spark : crime_similarity.py line 55, hypothesis_testing.py line 83
+[1] Spark : crime_similarity.py line 55, hypothesis_testing.py line 120
 [2] Hadoop : Below are the locations and sizes of the datasets used
 
              Raw Dataset Size:
@@ -44,3 +44,7 @@ To run similarity search for a specific year and month range:
 spark-submit crime_similarity.py start_year end_year+1 start_month end_month+1
 
 e.g. For years 2005-2010 and months 1-6: spark-submit crime_similarity.py 5 11 1 7
+
+To run the hypothesis testing for all counties, a given feature and year range:
+
+spark-submit hypothesis_testing.py ./2011-2015 ./pop_data_final.csv "Pop_rate" --years_list 2011 2012 2013 2014 2015
